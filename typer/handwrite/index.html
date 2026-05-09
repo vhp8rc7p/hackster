@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Handwriting</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow-y: auto; overflow-x: auto; }
+        body {
+            background: #fdf6e3;
+            background-image:
+                repeating-linear-gradient(
+                    transparent, transparent 84px,
+                    #c9bda6 84px, #c9bda6 85px
+                );
+            cursor: text;
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            overflow: visible;
+        }
+
+        /* Blinking cursor */
+        #svg-cursor rect {
+            animation: blink 1s step-end infinite;
+        }
+        @keyframes blink { 50% { opacity: 0; } }
+
+        #loading {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: sans-serif;
+            color: #999;
+            font-size: 18px;
+        }
+    </style>
+</head>
+<body>
+    <svg id="canvas" xmlns="http://www.w3.org/2000/svg">
+        <g id="svg-cursor">
+            <rect x="80" y="55" width="2" height="40" fill="#1a1a2e"/>
+        </g>
+    </svg>
+
+    <div id="loading">Loading font...</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
+    <script src="handwriting.js"></script>
+</body>
+</html>
