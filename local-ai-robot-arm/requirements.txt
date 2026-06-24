@@ -1,0 +1,21 @@
+# Core math / vision
+numpy
+opencv-python
+pillow
+
+# Deep learning (PyTorch with MPS for OWL-ViT / OWLv2)
+torch
+transformers
+
+# Apple-Silicon-native LLM and ASR
+mlx
+mlx-lm           # Qwen3-1.7B
+mlx-audio        # Nemotron 3.5 streaming ASR
+
+# Robot + kinematics
+pymycobot
+ikpy
+
+# Audio I/O
+sounddevice
+soundfile
