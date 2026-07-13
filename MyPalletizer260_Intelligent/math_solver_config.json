@@ -1,0 +1,11 @@
+{
+  "_comment": "MyPalletizer 260 使用 4 个关节 [J1, J2, J3, J4]。以下角度请根据您的机械臂实际情况标定。",
+  "POSITION_A": [0.0, 0.0, 0.0, 0.0],
+  "POSITION_B": [0.0, 0.0, 0.0, 0.0],
+  "POSITION_PLACE_TRANSITION": [0.0, 0.0, 0.0, 0.0],
+  "POSITION_PLACE_FINAL": [0.0, 0.0, 0.0, 0.0],
+  "PLACE_ABOVE": [209.3, -182.0, 151.8, 0.0],
+  "PLACE_DOWN": [211.7, -185.3, 68.1, 0.0],
+  "DEPTH_MM": 190,
+  "DOWN_DISTANCE": 110
+}
