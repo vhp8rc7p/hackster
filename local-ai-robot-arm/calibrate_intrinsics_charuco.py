@@ -24,7 +24,7 @@ import time
 import numpy as np
 import cv2
 
-SERIAL_PORT = "/dev/tty.usbserial-0202EDB8"
+SERIAL_PORT = "/dev/tty.usbserial-5AE20107941"
 BAUD_RATE = 115200
 CAMERA_ID = 0
 FRAME_W, FRAME_H = 1920, 1080
@@ -36,7 +36,7 @@ SQUARE_MM = 30.0
 MARKER_MM = 22.0
 DICTIONARY = cv2.aruco.DICT_4X4_50
 
-OUT_DIR = "/Users/v/Downloads/69conference/gantry_calib"
+OUT_DIR = "/Users/v/local-ai-robot-arm/gantry_calib"
 OUT_PATH = os.path.join(OUT_DIR, "intrinsics.json")
 BACKUP_PATH = os.path.join(OUT_DIR, "intrinsics.old.json")
 

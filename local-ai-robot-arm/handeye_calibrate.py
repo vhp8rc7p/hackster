@@ -29,14 +29,14 @@ from pymycobot.mycobot280 import MyCobot280
 from ikpy.chain import Chain
 
 # ── config ──────────────────────────────────────────────────────────
-SERIAL_PORT = "/dev/tty.usbserial-54780106801"
+SERIAL_PORT = "/dev/tty.usbserial-5AE20107941"
 BAUD_RATE = 115200
 CAMERA_ID = 0
 FRAME_W, FRAME_H = 1920, 1080
 
-URDF_PATH = "/Users/v/Downloads/69conference/mycobot_280_m5.urdf"
-INTRINSICS_PATH = "/Users/v/Downloads/69conference/gantry_calib/intrinsics.json"
-CALIB_PATH = "/Users/v/Downloads/69conference/calibration_result.json"
+URDF_PATH = "/Users/v/local-ai-robot-arm/mycobot_280_m5.urdf"
+INTRINSICS_PATH = "/Users/v/local-ai-robot-arm/gantry_calib/intrinsics.json"
+CALIB_PATH = "/Users/v/local-ai-robot-arm/calibration_result.json"
 
 # Chessboard — UPDATE SQUARE_MM if your printed pattern measured differently.
 BOARD_COLS, BOARD_ROWS = 9, 6   # inner corners

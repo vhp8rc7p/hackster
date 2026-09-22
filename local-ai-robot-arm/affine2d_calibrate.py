@@ -23,7 +23,7 @@ import cv2
 from pymycobot.mycobot280 import MyCobot280
 
 # ── config ──────────────────────────────────────────────────────────
-SERIAL_PORT = "/dev/tty.usbserial-0202EDB8"
+SERIAL_PORT = "/dev/tty.usbserial-5AE20107941"
 BAUD_RATE = 115200
 CAMERA_ID = 0
 FRAME_W, FRAME_H = 1920, 1080
@@ -31,7 +31,7 @@ PUMP_LENGTH = 70.0
 
 MARKER_ID = 3
 ARUCO_DICT = cv2.aruco.DICT_6X6_50
-OUT_PATH = "/Users/v/Downloads/69conference/calibration_affine2d.json"
+OUT_PATH = "/Users/v/local-ai-robot-arm/calibration_affine2d.json"
 
 CORNER_LABELS = ["TOP-LEFT", "TOP-RIGHT", "BOTTOM-RIGHT", "BOTTOM-LEFT"]
 

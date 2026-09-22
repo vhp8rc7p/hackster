@@ -37,7 +37,7 @@ for i in range(6):
     x = bd_px + i * sq_px
     img[tick_y - tick_h:tick_y + tick_h, x - 2:x + 2] = 0
 
-out_png = "/Users/v/Downloads/69conference/chessboard_9x6_20mm.png"
+out_png = "/Users/v/local-ai-robot-arm/chessboard_9x6_20mm.png"
 cv2.imwrite(out_png, img)
 print(f"Wrote {out_png}")
 print(f"  image size: {img_w} x {img_h} px  ({img_w/DPI*MM_PER_IN:.1f} x {img_h/DPI*MM_PER_IN:.1f} mm)")

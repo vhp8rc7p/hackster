@@ -20,7 +20,7 @@ from pymycobot.mycobot280 import MyCobot280
 from ikpy.chain import Chain
 
 # ── config ─────────────────────────────────────────────────────────────
-SERIAL_PORT = "/dev/tty.usbserial-54780106801"
+SERIAL_PORT = "/dev/tty.usbserial-5AE20107941"
 BAUD_RATE = 115200
 CAMERA_ID = 0
 FRAME_W, FRAME_H = 1920, 1080

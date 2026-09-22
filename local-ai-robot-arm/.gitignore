@@ -1,0 +1,49 @@
+# Python venv (huge)
+mlx_env/
+__pycache__/
+*.pyc
+*.pyo
+
+# macOS
+.DS_Store
+
+# Backup files
+*.bak
+*.touch.bak
+calibration_result.json.touch.bak
+
+# Debug / large output PNGs
+debug_owl_frame.png
+hover_debug.png
+pick_cubes_annotated.png
+pick_cubes_frame.png
+test_qwen_owl_annotated.png
+test_qwen_owl_frame.png
+aruco_landing_frame.png
+affine_markers.png
+
+# Logs / metrics
+debug_trace.log
+owl_metrics.csv
+
+# Audio recordings (unrelated to this project)
+Huafa North Road.m4a
+Huafa North Road_transcription.txt
+
+# Model / weight caches
+*.safetensors
+*.bin
+*.onnx
+
+# IDE
+.vscode/
+.idea/
+
+# runtime logs / metrics
+session.log
+debug_trace.log
+timing.csv
+owl_metrics.csv
+snapshot_*.png
+camera_check.png
+owl_precision.png

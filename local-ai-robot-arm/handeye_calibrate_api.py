@@ -22,14 +22,14 @@ from scipy.spatial.transform import Rotation as R
 from pymycobot.mycobot280 import MyCobot280
 
 # ── config ──────────────────────────────────────────────────────────
-SERIAL_PORT = "/dev/tty.usbserial-54780106801"
+SERIAL_PORT = "/dev/tty.usbserial-5AE20107941"
 BAUD_RATE = 115200
 CAMERA_ID = 0
 FRAME_W, FRAME_H = 1920, 1080
 
-INTRINSICS_PATH = "/Users/v/Downloads/69conference/gantry_calib/intrinsics.json"
-EXISTING_CALIB_PATH = "/Users/v/Downloads/69conference/calibration_result.json"
-OUT_PATH = "/Users/v/Downloads/69conference/calibration_result_api.json"
+INTRINSICS_PATH = "/Users/v/local-ai-robot-arm/gantry_calib/intrinsics.json"
+EXISTING_CALIB_PATH = "/Users/v/local-ai-robot-arm/calibration_result.json"
+OUT_PATH = "/Users/v/local-ai-robot-arm/calibration_result_api.json"
 
 # Chessboard — must match handeye_calibrate.py
 BOARD_COLS, BOARD_ROWS = 9, 6

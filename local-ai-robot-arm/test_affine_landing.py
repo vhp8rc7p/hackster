@@ -18,17 +18,17 @@ import cv2
 from pymycobot.mycobot280 import MyCobot280
 from ikpy.chain import Chain
 
-SERIAL_PORT = "/dev/tty.usbserial-0202EDB8"
+SERIAL_PORT = "/dev/tty.usbserial-5AE20107941"
 BAUD_RATE = 115200
 CAMERA_ID = 0
 FRAME_W, FRAME_H = 1920, 1080
-URDF_PATH = "/Users/v/Downloads/69conference/mycobot_280_m5.urdf"
-CALIB_PATH = "/Users/v/Downloads/69conference/calibration_affine2d.json"
+URDF_PATH = "/Users/v/local-ai-robot-arm/mycobot_280_m5.urdf"
+CALIB_PATH = "/Users/v/local-ai-robot-arm/calibration_affine2d.json"
 
 MARKER_ID = 2
 ARUCO_DICT = cv2.aruco.DICT_6X6_50
 PUMP_LENGTH = 70.0
-HOVER_HEIGHT = 30.0   # lower so you can read landing accuracy without pressing SPACE
+HOVER_HEIGHT = 10.0   # another 1cm lower (was 20)
 DIP_HEIGHT = -15.0    # press into surface if you want to dip (SPACE)
 SPEED = 25
 MOVE_THRESHOLD_MM = 5.0
@@ -50,18 +50,18 @@ def pixel_to_base_xy(u, v, A):
     return float(xy[0]), float(xy[1])
 
 
-def detect_marker_center(frame, target_id):
+def detect_marker_center(frame, target_id=None):
+    """Return (center_pixel, corners) of any detected marker (first one found).
+    Ignores target_id — kept as arg for backwards compatibility with call sites."""
     d = cv2.aruco.getPredefinedDictionary(ARUCO_DICT)
     p = cv2.aruco.DetectorParameters()
     p.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_SUBPIX
     det = cv2.aruco.ArucoDetector(d, p)
     corners, ids, _ = det.detectMarkers(frame)
-    if ids is None:
+    if ids is None or len(ids) == 0:
         return None, None
-    for i, mid in enumerate(ids.flatten().tolist()):
-        if int(mid) == target_id:
-            return corners[i][0].mean(axis=0), corners[i][0]
-    return None, None
+    # Take the first detected marker regardless of ID
+    return corners[0][0].mean(axis=0), corners[0][0]
 
 
 chain = Chain.from_urdf_file(
