@@ -39,7 +39,7 @@ CALIB_PATH = "calibration_result.json"
 URDF_PATH = "mycobot_280_m5.urdf"
 
 # Input mode: "voice" (mic + STT) or "text" (type commands at the prompt).
-INPUT_MODE = "voice"
+INPUT_MODE = "text"
 
 # IK backend — the toggle for how the arm moves:
 #   "native_tool" — firmware IK using the mycobot TOOL FRAME (set_tool_reference
@@ -71,7 +71,8 @@ HOVER_ABOVE = 55.0        # place/touch/tracking clearance (keep hover reachable
 PICK_HOVER_ABOVE = 50.0   # pick approach clearance → hover Z ≈ 110mm (reachable);
                           # 100 gave Z=160 which was UNREACHABLE at far cubes
 HAND_HOVER_ABOVE = 50.0   # smaller because the user catches the cube; keeps TCP in reach
-TOUCH_ABOVE = -5.0   # press 5mm into the cube top for a firm suction seal
+TOUCH_ABOVE = -8.0   # press 8mm into the cube top for a firm suction seal.
+                     # -5 (seal Z 55) often failed to grip; -8 -> seal Z 52.
                      # → pick tip Z = 60 - 5 = 55mm (measured seal height)
 SPEED = 55   # was 30 — motion is ~50% of a pick's wall time
 IK_ERR_LIMIT_MM = 30  # accept straight-down solutions up to 30mm off — cup deforms to absorb it. Prevents unnecessary tilt fallback at edge of reach.
@@ -274,16 +275,35 @@ def _draw_voice_state(disp):
     vanished whenever the preview was drawn by OWL detection or live_preview,
     which made it look like it randomly disappeared."""
     vs = globals().get("_voice_state", "idle")
+    lvl = float(globals().get("_voice_level", 0.0))
+    gate = float(globals().get("_voice_gate", 0.04))
     h = disp.shape[0]
     if vs == "idle":
-        col, txt = (140, 140, 140), "ready - speak a command"
+        col, txt = (170, 170, 170), "ready - speak"
     elif vs == "listening":
-        col, txt = (0, 255, 0), "HEARING YOU - stop talking when done"
+        col, txt = (0, 255, 0), "HEARING YOU"
     else:
-        col, txt = (0, 200, 255), "THINKING - please wait"
-    cv2.circle(disp, (40, h - 60), 18, col, -1)
-    cv2.putText(disp, txt, (70, h - 50),
-                cv2.FONT_HERSHEY_SIMPLEX, 1.0, col, 3)
+        col, txt = (0, 200, 255), "THINKING..."
+
+    # pulsing dot so it's obvious the listener is alive
+    pulse = 14 + int(5 * abs(np.sin(time.time() * 4.0)))
+    cv2.circle(disp, (36, h - 52), pulse, col, -1)
+    cv2.putText(disp, txt, (64, h - 44),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.9, col, 2)
+
+    # live level meter — replaces the per-frame terminal spam. Bar fills with
+    # the mic level; the white tick is the current adaptive gate, so you can
+    # see at a glance whether your voice is clearing it.
+    bx, by, bw, bh = 290, h - 62, 420, 22
+    full = max(0.30, gate * 2.0)                 # scale so the gate sits mid-bar
+    cv2.rectangle(disp, (bx, by), (bx + bw, by + bh), (60, 60, 60), -1)
+    fill = int(min(1.0, lvl / full) * bw)
+    cv2.rectangle(disp, (bx, by), (bx + fill, by + bh), col, -1)
+    gx = bx + int(min(1.0, gate / full) * bw)
+    cv2.line(disp, (gx, by - 4), (gx, by + bh + 4), (255, 255, 255), 2)
+    cv2.rectangle(disp, (bx, by), (bx + bw, by + bh), (200, 200, 200), 1)
+    cv2.putText(disp, f"{lvl:.3f}", (bx + bw + 12, by + bh - 4),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (220, 220, 220), 2)
 
 
 def _draw_stats_overlay(disp):
@@ -299,6 +319,7 @@ def _draw_stats_overlay(disp):
     cv2.putText(disp, txt, (10, 22), cv2.FONT_HERSHEY_SIMPLEX,
                 0.6, (255, 255, 255), 1)
     _draw_voice_state(disp)
+    video_frame(disp)
 
 UI_LANG = "en"   # "en" or "zh" — controls all user-facing terminal text
 
@@ -466,12 +487,20 @@ VAD_MAX_UTTERANCE_S = 4.0    # hard cap (was 8.0 — a long ramble turned into o
 # non-speech frames and put the gate a fixed RATIO above it — self-calibrating
 # for any mic/gain, pump on or off.
 VAD_NOISE_RATIO = 2.2        # gate = noise_floor * this
+VAD_PUMP_BRIDGE = 0.085      # gate used for the ~1s after the pump switches,
+                             # before the floor estimator has re-learned
 VAD_GATE_MIN = 0.012         # never gate below this (silence would self-trigger)
-VAD_GATE_MAX = 0.090         # never gate above this (speech would be missed)
+VAD_GATE_MAX = 0.25          # never gate above this (speech would be missed).
+                             # 0.090 was too low OUTDOORS: ambient measured
+                             # 0.09-0.13, so the gate pinned at its ceiling and
+                             # every gust/car triggered an utterance.
 VAD_PUMP_THRESHOLD = 0.075   # legacy fixed value, kept for reference only
 VAD_WARMUP_S = 0.25          # drain stream-open transient before listening
 VAD_PREROLL_S = 0.30         # audio kept before trigger so onsets aren't clipped
-VAD_MIN_VOICED_S = 0.20      # min loud audio to accept, else it's a false trigger
+VAD_MIN_VOICED_S = 0.10      # min loud audio to accept, else it's a false trigger.
+                             # Was 0.20 (=4 frames), which DISCARDED one-syllable
+                             # words: measured 'wait' produced only 1-3 voiced
+                             # frames, so every interrupt was thrown away.
 
 # Mic selection. None = auto (prefer names in MIC_NAME_PREFER, then any input).
 # Set to an int device index (see: python test_mic.py --list) to pin one mic.
@@ -483,6 +512,8 @@ voice_queue = queue.Queue()
 # you can SEE whether you were heard — without it you repeat yourself, and each
 # repeat extends the same utterance instead of starting a new one.
 _voice_state = "idle"      # idle | listening | transcribing
+_voice_level = 0.0         # live mic level, drawn as a meter in the window
+_voice_gate = 0.04         # current adaptive gate, drawn as a tick
 _voice_stop = threading.Event()
 
 
@@ -490,6 +521,38 @@ DENOISE = True            # spectral subtraction before STT
 DENOISE_ALPHA = 2.0       # over-subtraction factor (1.5-3; higher = more removal)
 DENOISE_FLOOR = 0.05      # spectral floor, keeps musical noise down
 DENOISE_NFFT = 512
+
+
+VOICE_LOG = "voice.csv"
+# Save the ACTUAL audio of every captured utterance, paired with what it
+# transcribed to. Text logs say the transcript was wrong; only the audio says
+# WHY (clipped onset, pump hum, too quiet, user talked over the tail).
+RECORD_AUDIO = True
+AUDIO_DIR = "voice_clips"
+_voice_log_file = None
+
+
+def vlog(event, level=0.0, gate=0.0, floor=0.0, dur=0.0, voiced=0, text=""):
+    """Append one row of VAD/STT telemetry.
+
+    The per-frame level/gate used to be printed to the terminal, which was
+    spammy but was also the only record of WHY the listener behaved the way it
+    did. This keeps the data (and makes it analysable) without the noise.
+    """
+    global _voice_log_file
+    try:
+        if _voice_log_file is None:
+            new = not os.path.exists(VOICE_LOG)
+            _voice_log_file = open(VOICE_LOG, "a", buffering=1)
+            if new:
+                _voice_log_file.write(
+                    "timestamp,event,level,gate,floor,pump,dur_s,voiced,text\n")
+        safe = (text or "").replace('"', "'").replace("\n", " ")
+        _voice_log_file.write(
+            f"{time.time():.3f},{event},{level:.4f},{gate:.4f},{floor:.4f},"
+            f"{int(bool(_pump_engaged))},{dur:.2f},{voiced},\"{safe}\"\n")
+    except Exception:
+        pass
 
 
 def spectral_subtract(audio, noise, sr=SAMPLE_RATE,
@@ -577,7 +640,10 @@ def _voice_listener(stt_model):
     # rolling buffer of recent NON-speech audio -> the noise profile used by
     # spectral subtraction (captures whatever the pump is doing right now)
     noise_buf = deque(maxlen=int(1.5 / VAD_FRAME_S))
-    noise_rms = deque(maxlen=60)   # recent non-speech levels -> adaptive gate
+    all_rms = deque(maxlen=100)    # ~5s of EVERY frame -> percentile noise floor
+    last_pump = False              # detect pump on/off to re-learn immediately
+    noise_rms = all_rms            # back-compat alias
+    bad_frames = 0                 # consecutive unusable audio frames
     buffer, silence, speaking, voiced = [], 0, False, 0
     last_heartbeat = time.time()
     device_idx, device_name = _find_macbook_mic()
@@ -586,15 +652,89 @@ def _voice_listener(stt_model):
     else:
         print(t("voice_input_default"))
     try:
+        # CALLBACK capture, not blocking reads. This thread runs STT inline, so
+        # with stream.read() it stopped pulling audio for ~1s during Nemotron —
+        # the input buffer overflowed and PortAudio handed back garbage (we saw
+        # rms 1.8-4.0, impossible for float32 audio). A callback runs in
+        # PortAudio's own high-priority thread and keeps filling a queue no
+        # matter how busy Python is.
+        audio_q = queue.Queue(maxsize=200)   # ~10s; drop oldest if we fall behind
+        overflow_flag = {"n": 0}
+
+        def _audio_cb(indata, frames, time_info, status):
+            if status:
+                overflow_flag["n"] += 1
+            try:
+                audio_q.put_nowait(indata.copy().reshape(-1))
+            except queue.Full:
+                try:
+                    audio_q.get_nowait()        # drop oldest, stay near realtime
+                    audio_q.put_nowait(indata.copy().reshape(-1))
+                except Exception:
+                    pass
+
         with sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
-                            blocksize=chunk_samples, device=device_idx) as stream:
+                            blocksize=chunk_samples, device=device_idx,
+                            callback=_audio_cb):
             # Drain the stream-open transient so a startup pop can't false-trigger.
-            for _ in range(warmup_chunks):
-                stream.read(chunk_samples)
+            t_warm = time.time()
+            while time.time() - t_warm < VAD_WARMUP_S:
+                try: audio_q.get(timeout=0.2)
+                except queue.Empty: pass
             while not _voice_stop.is_set():
-                data, _ = stream.read(chunk_samples)
-                chunk = data.flatten()
+                try:
+                    chunk = audio_q.get(timeout=0.5)
+                except queue.Empty:
+                    continue
+                overflowed = overflow_flag["n"] > 0
+                overflow_flag["n"] = 0
                 rms = float(np.sqrt(np.mean(chunk ** 2)))
+                if np.isfinite(rms) and rms <= 1.0:
+                    globals()["_voice_level"] = rms
+                    # Feed the floor estimator with EVERY frame. Sampling only
+                    # sub-gate frames was a trap: once the pump pushed noise
+                    # above the gate, every frame counted as speech, the floor
+                    # was never re-sampled, and the gate could not rise. The VAD
+                    # then triggered on pump hum forever (4s of noise -> empty
+                    # transcript -> dropped), so real speech never got through.
+                    all_rms.append(rms)
+
+                # The pump changes the noise floor INSTANTLY, but a percentile
+                # over a rolling window needs seconds to catch up. During that
+                # lag the gate stayed at 0.012 and the VAD recorded 4s blobs of
+                # pure hum (measured SNR 0.3-0.5dB, transcribing to nothing)
+                # while real speech was missed. We know exactly when the pump
+                # switches, so drop the history and re-learn from scratch.
+                if _pump_engaged != last_pump:
+                    last_pump = _pump_engaged
+                    all_rms.clear()
+                    if speaking:          # whatever we were capturing is junk
+                        buffer, silence, speaking, voiced = [], 0, False, 0
+                        globals()["_voice_state"] = "idle"
+                    vlog("pump_change", rms, 0.0)
+
+                # SANITY GUARD. float32 audio lives in [-1,1], so RMS can never
+                # exceed 1.0. A buffer overflow (or a device being plugged in
+                # mid-stream) can hand back garbage — we once saw rms=4.05,
+                # which sits above every possible gate, so the VAD never saw
+                # silence again and the listener hung in "listening" forever.
+                # Drop bad frames instead of letting them drive the state.
+                if overflowed:
+                    dlog(f"audio overflow (rms={rms:.3f}) — frame dropped")
+                if (not np.isfinite(rms)) or rms > 1.0 or overflowed:
+                    bad_frames += 1
+                    if bad_frames == 1 or bad_frames % 20 == 0:
+                        print(f"  ⚠ bad audio frame (level {rms:.3f}) — ignoring"
+                              f"{' [overflow]' if overflowed else ''}", flush=True)
+                    vlog("bad_frame", rms if np.isfinite(rms) else -1.0, gate)
+                    if bad_frames > 40 and speaking:
+                        # stuck mid-utterance on junk: drop it and re-arm
+                        print("  ⚠ audio stream unstable — resetting listener")
+                        buffer, silence, speaking, voiced = [], 0, False, 0
+                        globals()["_voice_state"] = "idle"
+                        bad_frames = 0
+                    continue
+                bad_frames = 0
                 # Heartbeat every 30s so we know the listener is still alive
                 if time.time() - last_heartbeat > 30:
                     last_heartbeat = time.time()
@@ -602,24 +742,31 @@ def _voice_listener(stt_model):
 
                 # While idle, keep a rolling pre-roll so word onsets aren't clipped.
                 # Adaptive gate from the measured noise floor (see above).
-                if noise_rms:
-                    floor = float(np.median(noise_rms))
+                if len(all_rms) >= 20:
+                    # low percentile = the quiet background, even while speech
+                    # or pump noise is present in the same window
+                    floor = float(np.percentile(np.array(all_rms), 20))
                     gate = min(max(floor * VAD_NOISE_RATIO, VAD_GATE_MIN),
                                VAD_GATE_MAX)
                 else:
-                    gate = VAD_RMS_THRESHOLD
+                    # Not enough history yet (startup, or just after a pump
+                    # change cleared it). Bridge with a conservative value —
+                    # the plain 0.04 default is below measured pump noise, so
+                    # for that ~1s the VAD would trigger on hum again.
+                    gate = (VAD_PUMP_BRIDGE if _pump_engaged
+                            else VAD_RMS_THRESHOLD)
+                globals()["_voice_gate"] = gate
 
                 if not speaking and rms <= gate:
                     preroll.append(chunk)
                     noise_buf.append(chunk)
-                    noise_rms.append(rms)
 
                 if rms > gate:
                     if not speaking:
                         speaking = True
                         globals()["_voice_state"] = "listening"
-                        print(f"  🎤 listening... (level {rms:.3f} > gate {gate:.3f}"
-                              f"{', pump on' if _pump_engaged else ''})", flush=True)
+                        vlog("start", rms, gate,
+                             float(np.median(noise_rms)) if noise_rms else 0.0)
                         buffer.extend(preroll)   # prepend pre-roll for the onset
                     silence = 0
                     voiced += 1
@@ -627,6 +774,12 @@ def _voice_listener(stt_model):
                 elif speaking:
                     buffer.append(chunk)         # keep trailing audio (hangover)
                     silence += 1
+
+                # Finalize check runs for BOTH branches. It used to sit inside
+                # the "quiet" branch only, so a level that never dropped below
+                # the gate (steady noise, or a garbage stream) buffered forever
+                # and the listener looked frozen. The length cap now always bites.
+                if speaking:
                     if silence >= silence_chunks_end or len(buffer) >= max_chunks:
                         audio = np.concatenate(buffer)
                         dur = len(audio) / SAMPLE_RATE
@@ -634,13 +787,25 @@ def _voice_listener(stt_model):
                         buffer, silence, speaking, voiced = [], 0, False, 0
                         # Discard false triggers: too little actual speech.
                         if was_voiced < min_voiced or dur < VAD_MIN_UTTERANCE_S:
+                            vlog("discard", gate=gate, dur=dur, voiced=was_voiced)
                             continue
                         globals()["_voice_state"] = "transcribing"
-                        print("  ⏳ transcribing...", flush=True)
                         try:
                             if DENOISE and len(noise_buf) >= 6:
                                 audio = spectral_subtract(
                                     audio, np.concatenate(list(noise_buf)))
+                            if RECORD_AUDIO:
+                                try:
+                                    os.makedirs(AUDIO_DIR, exist_ok=True)
+                                    _clip = os.path.join(
+                                        AUDIO_DIR,
+                                        f"{time.strftime('%H%M%S')}_"
+                                        f"{int(time.time()*100)%100:02d}.wav")
+                                    sf.write(_clip, audio, SAMPLE_RATE)
+                                except Exception as _e:
+                                    _clip = ""; dlog(f"clip save failed: {_e}")
+                            else:
+                                _clip = ""
                             tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
                             sf.write(tmp.name, audio, SAMPLE_RATE)
                             tmp.close()
@@ -649,6 +814,11 @@ def _voice_listener(stt_model):
                             text = text.strip()
                             os.unlink(tmp.name)
                             if not text:
+                                # Empty transcript = we captured noise, not
+                                # speech. Logged so a gate stuck too low shows
+                                # up as a run of these instead of silence.
+                                vlog("empty", gate=gate, dur=dur,
+                                     voiced=was_voiced, text=_clip)
                                 continue
                             # Filter STT hallucinations on near-silence.
                             stripped = text.strip(".,!? ").lower()
@@ -672,7 +842,9 @@ def _voice_listener(stt_model):
                                     print(t("ignored_short", text=text))
                                     continue
                             globals()["_voice_state"] = "idle"
-                            text = dedupe_repeats(text)
+                            text = fix_transcript(dedupe_repeats(text))
+                            vlog("heard", gate=gate, dur=dur,
+                                 voiced=was_voiced, text=f"{_clip} | {text}")
                             print(t("heard", text=text))
                             voice_queue.put(text)
                         except Exception as e:
@@ -1211,6 +1383,65 @@ def _color_from_query(query):
 # Words STT commonly hears instead of "cube" (from mic testing): queue, cue,
 # cave, tube, koob... If the object names a known cube color and isn't a hand/
 # box/card, snap it to "a <color> cube" so a misheard noun still finds the cube.
+# Phrase-level mishears worth fixing BEFORE Qwen sees them. "Put it" is heard
+# as "Potato"/"Potate" often enough that it produced {"object": "a potato"} and
+# OWL then hunted for a potato for 200 frames.
+TRANSCRIPT_FIXUPS = [
+    ("potato ", "put it "), ("potate ", "put it "), ("potatoe ", "put it "),
+    ("pot it ", "put it "), ("puddit ", "put it "),
+    ("prace ", "place "), ("picles ", "pick "), ("fick ", "pick "),
+    ("pick at ", "pick "), ("face it ", "place it "),
+]
+
+# Things the detector can actually find. A target outside this set is a
+# mis-transcription, not a real request — fail fast instead of searching.
+KNOWN_TARGET_WORDS = {
+    "cube", "block", "hand", "palm", "box", "carton", "cardboard", "bowl",
+    "cup", "container", "tray", "card", "coin", "paper", "marker", "object",
+}
+
+
+def fix_transcript(text):
+    """Correct known STT mishears before the LLM parses the sentence."""
+    if not text:
+        return text
+    low = " " + text.lower() + " "
+    out = low
+    for bad, good in TRANSCRIPT_FIXUPS:
+        out = out.replace(" " + bad, " " + good)
+    if out != low:
+        fixed = out.strip()
+        print(f"  (fixed transcript: {text!r} -> {fixed!r})")
+        return fixed
+    return text
+
+
+def color_is_grounded(obj, said):
+    """Reject a plan whose COLOUR was never spoken.
+
+    Qwen turned "Place it in the bottom." into {"object": "a pink cube"} —
+    "pink" appears nowhere in the sentence. A colour is concrete and should
+    never be inferred, so if the object names one the user didn't say, the
+    plan is a hallucination off a bad transcript. (Non-colour inferences like
+    "give it to me" -> "a human hand" are legitimate and left alone.)
+    """
+    if not obj or not said:
+        return True
+    said_l = said.lower()
+    for c in CUBE_HSV_RANGES:
+        if c in obj.lower() and c not in said_l:
+            return False
+    return True
+
+
+def is_known_target(obj):
+    """True if obj names something the detector plausibly handles."""
+    if not obj:
+        return False
+    words = set(obj.lower().replace(",", " ").replace(".", " ").split())
+    return bool(words & KNOWN_TARGET_WORDS)
+
+
 def dedupe_repeats(text):
     """Collapse a transcript that repeats the same command several times.
 
@@ -1519,6 +1750,8 @@ def find_object(frame, query, processor, model, device, mtx, dist, T_cam2base, z
 COORD_LIMIT_MM = 281.45      # per-axis hard limit enforced by pymycobot
 MAX_REACH_MM = 280.0         # spherical reach from the base origin
 MIN_TIP_Z_MM = 20.0          # never drive the tip below this (table protection)
+MAX_Z_LOWER_MM = 40.0        # most we'll lower a target to keep it reachable;
+                             # beyond this it's a different action, not a fix
 
 
 def validate_target(tx, ty, tz):
@@ -1610,7 +1843,11 @@ def _move_via_native(mc, target_xyz_mm, label, require_down):
             flat = float(np.sqrt(tx * tx + ty * ty))
             if flat < MAX_REACH_MM:
                 z_max = float(np.sqrt(MAX_REACH_MM ** 2 - flat ** 2)) - 2.0
-                if z_max >= MIN_TIP_Z_MM and z_max < tz:
+                # Only a MODEST correction. Dropping 185mm -> 46mm to "stay in
+                # reach" turned a hand delivery into reaching down to the table
+                # and releasing there. If the target needs more than this, it's
+                # genuinely out of reach and the caller should be told.
+                if z_max >= MIN_TIP_Z_MM and z_max < tz and (tz - z_max) <= MAX_Z_LOWER_MM:
                     print(f"  [{label}] target out of reach at z={tz:.0f}; "
                           f"lowering to z={z_max:.0f} to stay in reach")
                     tz = z_max
@@ -1619,6 +1856,8 @@ def _move_via_native(mc, target_xyz_mm, label, require_down):
                     fixed = ok
         if not fixed:
             print(f"  [{label}] refusing target: {why}")
+            print("     → hold your hand CLOSER to the robot, or move the "
+                  "target nearer the base")
             say("out_of_reach")
             return False
 
@@ -2215,6 +2454,14 @@ def execute(plan, mc, cap, processor, model, device, mtx, dist, T_cam2base):
     obj = normalize_object(plan.get("object"))
     if not obj:
         print("  no object given"); return
+    # A target the detector cannot possibly find is a mis-transcription
+    # ("Put it in the box" -> "Potato in the box" -> object "a potato").
+    # Fail immediately instead of burning 200 frames hunting for it.
+    if not is_known_target(obj):
+        print(f"  ⚠ don't know how to find {obj!r} — ignoring "
+              f"(probably misheard; try again)")
+        say("didnt_understand")
+        return
 
     if action == "pick":
         do_pick(mc, cap, processor, model, device, mtx, dist, T_cam2base, obj)
@@ -2235,6 +2482,45 @@ def execute(plan, mc, cap, processor, model, device, mtx, dist, T_cam2base):
 # ── main ──────────────────────────────────────────────────────────────
 
 SESSION_LOG = "session.log"
+
+# Session video. Records the annotated preview so a run can be reviewed after
+# the fact — what the camera saw, what was detected, where the arm went. Far
+# more useful for debugging than text alone.
+RECORD_VIDEO = False   # off: audio is what matters for STT debugging
+VIDEO_LOG = "session_video.mp4"
+VIDEO_FPS = 6.0            # low fps keeps the file small; this is for review
+_video_writer = None
+_video_last = 0.0
+
+
+def video_frame(disp):
+    """Append one annotated frame to the session recording (throttled)."""
+    global _video_writer, _video_last
+    if not RECORD_VIDEO or disp is None:
+        return
+    now = time.time()
+    if now - _video_last < 1.0 / VIDEO_FPS:
+        return
+    _video_last = now
+    try:
+        if _video_writer is None:
+            h, w = disp.shape[:2]
+            _video_writer = cv2.VideoWriter(
+                VIDEO_LOG, cv2.VideoWriter_fourcc(*"mp4v"), VIDEO_FPS, (w, h))
+            print(f"(recording video to {VIDEO_LOG})")
+        _video_writer.write(disp)
+    except Exception as e:
+        dlog(f"video_frame failed: {e}")
+
+
+def close_video():
+    global _video_writer
+    if _video_writer is not None:
+        try:
+            _video_writer.release()
+        except Exception:
+            pass
+        _video_writer = None
 
 
 class _Tee:
@@ -2423,6 +2709,18 @@ def main():
                 if INPUT_MODE == "text":
                     print("cmd> ", end="", flush=True)
                 continue
+            # Guard against the LLM inventing a colour the user never said.
+            for _k in ("object", "source", "target"):
+                if not color_is_grounded(plan.get(_k), text):
+                    print(f"  ⚠ plan names {plan.get(_k)!r} but you never said "
+                          f"that colour — ignoring (misheard: {text!r})")
+                    say("didnt_understand")
+                    plan = None
+                    break
+            if plan is None:
+                if INPUT_MODE == "text":
+                    print("cmd> ", end="", flush=True)
+                continue
             print(f"  plan: {plan}"); say("ok")
             if plan["action"] == "quit":
                 break
@@ -2438,6 +2736,7 @@ def main():
         if IK_BACKEND == "native_tool":
             try: mc.set_end_type(0)   # restore flange frame for other scripts
             except Exception: pass
+        close_video()
         cap.release()
         print("Done.")
 

@@ -47,3 +47,6 @@ owl_metrics.csv
 snapshot_*.png
 camera_check.png
 owl_precision.png
+voice.csv
+session_video.mp4
+voice_clips/

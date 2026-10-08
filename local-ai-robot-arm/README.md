@@ -57,43 +57,61 @@ Example commands:
 
 ## Calibration (do this once per camera mount)
 
-You need two calibrations: **camera intrinsics** (lens model) and
-**eye-to-hand** (where the camera is relative to the robot base).
+> **Setting this up for the first time, or handing it to someone else?**
+> Read **[SETUP_GUIDE.md](SETUP_GUIDE.md)** instead — it walks through the
+> hardware build, install, and calibration step by step, with no assumed
+> programming knowledge.
 
-### 1. Camera intrinsics
+The pipeline runs on a **2D affine** calibration (`CALIB_MODE = "affine"`):
+a direct pixel → robot-XY mapping of the work surface. That is the only
+calibration the demo needs.
 
-Already done — `gantry_calib/intrinsics.json` contains a 0.58 px reprojection
-error calibration. Only redo if you change the camera or lens.
+Pick **either** method — both write `calibration_affine2d.json`:
 
-### 2. Hand-eye (camera → robot base)
-
-Print the chessboard pattern (`chessboard_9x6_20mm.png`) and **measure it**.
-Printers usually don't print at exactly the intended size, so set
-`SQUARE_MM` in `handeye_calibrate.py` to whatever you actually measure
-(measure across 5 squares for accuracy).
-
-Tape the printout to **rigid cardboard** and mount on the end-effector
-(side of the pump tube works; exact mount point doesn't matter — the solver
-figures it out).
-
-Then:
+### Option A — with a cube (no printing)
 
 ```bash
-python handeye_calibrate.py
+./mlx_env/bin/python affine2d_calibrate_cube.py
 ```
 
-- Servos release so you can drag the arm by hand
-- Position the arm so the chessboard is in camera view, hold steady, press
-  **SPACE** to capture
-- Aim for **12–20 poses** with **rotation diversity on all 3 axes**
-  (twist the wrist using J4/J5/J6 — don't just slide flat)
-- Press **ENTER** to solve. The script tries 5 OpenCV hand-eye methods and
-  keeps the best by residual
-- Output overwrites `calibration_result.json` (the old one is backed up to
-  `calibration_result.json.touch.bak`)
+Move one coloured cube to 6–8 spots. At each: SPACE to lock the cube's pixel,
+touch the cube top with the pump tip, SPACE again. Q to solve.
 
-Target residual: **< 5 mm**. Higher means rotation diversity was poor,
-the mount flexed, or the URDF doesn't match your particular arm.
+Because it is calibrated at **cube-top height**, cube picks absorb the parallax
+that a table-plane fit leaves behind — slightly better for cubes, slightly
+worse for flat objects.
+
+### Option B — with ArUco markers
+
+```bash
+./mlx_env/bin/python make_aruco_markers.py     # generates aruco_markers.pdf
+./mlx_env/bin/python affine2d_calibrate_multi.py
+```
+
+Print at **Actual Size (100%)**, scatter the markers, then touch each one's
+centre with the pump tip in the live window.
+
+**Target: mean residual < 5 mm.** Both scripts print it when they solve.
+
+### Then check the height
+
+```bash
+./mlx_env/bin/python test_cube_hover.py
+```
+
+SPACE to hover over a cube, `-`/`+` to adjust 10 mm at a time until the tip
+touches the cube top. That `tipZ` sets `TOUCH_ABOVE`.
+
+### Camera intrinsics (rarely needed)
+
+`gantry_calib/intrinsics.json` holds a 0.68 px calibration. **Affine mode does
+not use it** for pick coordinates — only for masking the arm out of detections.
+Redo with `calibrate_intrinsics_charuco.py` only if you change camera or lens.
+
+### Legacy: 3D hand-eye
+
+`handeye_calibrate.py` (chessboard on the end-effector) feeds the older
+`CALIB_MODE = "handeye"` path. Not used by the current setup.
 
 ## Running the demo
 

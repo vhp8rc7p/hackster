@@ -105,6 +105,42 @@ def pct(x, total):
     return (x / total * 100.0) if total else 0.0
 
 
+def voice_report():
+    """Summarise voice.csv — what the VAD actually did, and why."""
+    import csv as _csv
+    if not os.path.exists("voice.csv"):
+        return
+    rows = list(_csv.DictReader(open("voice.csv")))
+    if not rows:
+        return
+    ev = defaultdict(int)
+    for r in rows:
+        ev[r["event"]] += 1
+    print("\n  VOICE / VAD")
+    print(f"    utterances heard : {ev.get('heard', 0)}")
+    print(f"    discarded (short): {ev.get('discard', 0)}")
+    print(f"    bad audio frames : {ev.get('bad_frame', 0)}")
+    starts = [r for r in rows if r["event"] == "start"]
+    if starts:
+        lv = [float(r["level"]) for r in starts]
+        gt = [float(r["gate"]) for r in starts]
+        fl = [float(r["floor"]) for r in starts if float(r["floor"]) > 0]
+        print(f"    trigger level    : median {sorted(lv)[len(lv)//2]:.3f}")
+        print(f"    adaptive gate    : min {min(gt):.3f}  max {max(gt):.3f}")
+        if fl:
+            print(f"    noise floor      : median {sorted(fl)[len(fl)//2]:.3f}")
+        pump = [r for r in starts if r["pump"] == "1"]
+        if pump:
+            pl = [float(r["gate"]) for r in pump]
+            print(f"    gate w/ pump on  : median {sorted(pl)[len(pl)//2]:.3f} "
+                  f"({len(pump)} of {len(starts)})")
+    heard = [r["text"] for r in rows if r["event"] == "heard"][-5:]
+    if heard:
+        print("    last transcripts :")
+        for h in heard:
+            print(f"      {h[:62]}")
+
+
 def report(last_n=None):
     timing = read_timing()
     owl = read_owl()
@@ -181,6 +217,7 @@ def report(last_n=None):
         what, knob = PHASE_HELP.get(phase, ("—", "—"))
         print(f"    • {phase} ({pct(sum(vals), grand):.0f}% of time) — {what}")
         print(f"        {knob}")
+    voice_report()
     print("=" * 72)
 
 
