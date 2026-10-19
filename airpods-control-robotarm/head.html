@@ -1,0 +1,456 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Head Tracker</title>
+<style>
+  :root {
+    --bg: #0b0d11;
+    --panel: rgba(22, 26, 33, 0.82);
+    --line: rgba(255, 255, 255, 0.10);
+    --text: #e8ecf2;
+    --dim: #8b95a5;
+    --accent: #5ad1e6;
+    --warn: #e8b44a;
+    --dead: #6b7280;
+    --j1: #5ad1e6;
+    --j2: #7ee787;
+    --j5: #e8a0d8;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 ui-sans-serif, -apple-system, "SF Pro Text", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #scene { position: fixed; inset: 0; }
+
+  .hud { position: fixed; z-index: 2; }
+
+  #top {
+    top: 0; left: 0; right: 0;
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 20px;
+    background: linear-gradient(var(--bg), transparent);
+  }
+  h1 { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--dim); font-size: 12.5px; }
+  #status {
+    margin-left: auto; display: flex; align-items: center; gap: 7px;
+    font-size: 12.5px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+  #dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--dead); transition: background .2s;
+  }
+  #dot.live { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+
+  #readout {
+    left: 20px; bottom: 20px;
+    width: 268px; padding: 16px 18px 14px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    backdrop-filter: blur(14px);
+  }
+  .axis + .axis { margin-top: 13px; }
+  .axis-top {
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 12.5px; color: var(--dim);
+  }
+  .axis-name { color: var(--text); font-weight: 550; }
+  .joint {
+    margin-left: auto; font-size: 11px; letter-spacing: .03em;
+    padding: 1px 6px; border-radius: 4px;
+    background: rgba(255,255,255,.06);
+  }
+  .val {
+    font: 600 19px/1.25 ui-monospace, "SF Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    margin-top: 1px;
+  }
+  .bar {
+    position: relative; height: 3px; margin-top: 7px;
+    background: rgba(255,255,255,.08); border-radius: 2px;
+  }
+  .bar i {
+    position: absolute; top: 0; bottom: 0; left: 50%;
+    border-radius: 2px; transition: none;
+  }
+  .bar::after {           /* centre tick */
+    content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px;
+    width: 1px; background: rgba(255,255,255,.22);
+  }
+
+  #note {
+    right: 20px; bottom: 20px; max-width: 250px;
+    font-size: 12px; color: var(--dim); text-align: right;
+  }
+  #note b { color: var(--warn); font-weight: 550; }
+  button {
+    margin-top: 10px;
+    font: inherit; font-size: 12.5px;
+    color: var(--text); background: rgba(255,255,255,.07);
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 6px 13px; cursor: pointer;
+  }
+  button:hover { background: rgba(255,255,255,.13); }
+
+  #credit {
+    left: 20px; top: 52px;
+    font-size: 11.5px; color: var(--dim); opacity: .75;
+  }
+  #credit a { color: inherit; }
+
+  #offline {
+    position: fixed; inset: 0; z-index: 3;
+    display: none; place-items: center;
+    background: rgba(11,13,17,.80); backdrop-filter: blur(3px);
+    text-align: center; padding: 24px;
+  }
+  #offline.show { display: grid; }
+  #offline code {
+    display: inline-block; margin-top: 10px; padding: 7px 12px;
+    background: rgba(255,255,255,.07); border-radius: 7px;
+    font: 13px ui-monospace, Menlo, monospace; color: var(--accent);
+  }
+  @media (max-width: 640px) {
+    #readout { width: auto; left: 16px; right: 16px; }
+    #note { display: none; }
+  }
+</style>
+</head>
+<body>
+<div id="scene"></div>
+
+<div class="hud" id="top">
+  <h1>Head Tracker</h1>
+  <span class="sub">AirPods Pro&nbsp;2 &middot; CoreMotion</span>
+  <div id="status"><span id="dot"></span><span id="rate">waiting</span></div>
+</div>
+
+<div class="hud" id="readout">
+  <div class="axis">
+    <div class="axis-top"><span class="axis-name">Yaw</span> turn
+      <span class="joint" style="color:var(--j1)">J1 base</span></div>
+    <div class="val" id="v-yaw">—</div>
+    <div class="bar"><i id="b-yaw" style="background:var(--j1)"></i></div>
+  </div>
+  <div class="axis">
+    <div class="axis-top"><span class="axis-name">Pitch</span> nod
+      <span class="joint" style="color:var(--j2)">J2 shoulder</span></div>
+    <div class="val" id="v-pitch">—</div>
+    <div class="bar"><i id="b-pitch" style="background:var(--j2)"></i></div>
+  </div>
+  <div class="axis">
+    <div class="axis-top"><span class="axis-name">Roll</span> tilt
+      <span class="joint" style="color:var(--j5)">J5 wrist</span></div>
+    <div class="val" id="v-roll">—</div>
+    <div class="bar"><i id="b-roll" style="background:var(--j5)"></i></div>
+  </div>
+</div>
+
+<div class="hud" id="credit">
+  Head scan: <a href="http://www.ir-ltd.net/" target="_blank" rel="noopener">Lee Perry-Smith</a>, CC&nbsp;BY&nbsp;3.0
+</div>
+
+<div class="hud" id="note">
+  Yaw has no magnetic reference and <b>drifts</b>. Pitch and roll are
+  gravity&#8209;referenced and stay true.
+  <br><button id="recenter">Recenter yaw</button>
+</div>
+
+<div id="offline">
+  <div>
+    <div style="font-size:15px;font-weight:600">No head data</div>
+    <div class="sub" style="margin-top:6px">Start the tracker and put the AirPods in:</div>
+    <code>./headtrack/headtrack</code>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+const DEG = Math.PI / 180;
+
+/* ---------- scene ---------- */
+const host = document.getElementById('scene');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.05;
+host.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0d11);
+scene.fog = new THREE.Fog(0x0b0d11, 7, 15);
+
+const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
+
+scene.add(new THREE.HemisphereLight(0xbcd4ff, 0x20242c, 0.75));
+const key = new THREE.DirectionalLight(0xffffff, 0.95); key.position.set(3, 5, 4);
+const rim = new THREE.DirectionalLight(0x5ad1e6, 0.55);  rim.position.set(-4, 1, -4);
+scene.add(key, rim);
+
+/* floor grid + horizon ring give the rotation something to read against */
+const grid = new THREE.GridHelper(14, 28, 0x2a3240, 0x171c24);
+grid.position.y = -3.0;
+scene.add(grid);
+
+const ring = new THREE.Mesh(
+  new THREE.TorusGeometry(2.1, 0.005, 8, 120),
+  new THREE.MeshBasicMaterial({ color: 0x3a4454 })
+);
+ring.rotation.x = Math.PI / 2;
+ring.position.y = -2.75;
+scene.add(ring);
+
+/* ---------- head ---------- */
+const head = new THREE.Group();          // driven by the sensor
+scene.add(head);
+
+/* handy when checking placement from the console */
+window.__dbg = { THREE, scene, head, camera };
+
+const white = new THREE.MeshStandardMaterial({ color: 0xf2f5f9, roughness: 0.25 });
+
+/* The AirPods are ours, not part of the scan.
+   This head is a real photogrammetry capture and is NOT symmetric — its left
+   side runs ~0.17 model units wider than its right at every height. Mirroring
+   one hand-picked position therefore buries the pod on one side, so each ear
+   gets its own anchor, found by raycasting the real geometry below. */
+const tipMat = new THREE.MeshStandardMaterial({ color: 0xcdd4de, roughness: 0.65 });
+
+function addAirPods(anchors) {
+  for (const side of [-1, 1]) {
+    const a = anchors[side];
+    if (!a) continue;
+    const pod = new THREE.Group();
+
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.098, 24, 18), white);
+    body.scale.set(0.76, 1, 0.92);
+
+    /* silicone tip points medially and slightly forward, into the canal */
+    const tip = new THREE.Mesh(new THREE.SphereGeometry(0.058, 20, 14), tipMat);
+    tip.position.set(-0.05 * side, 0.004, -0.018);
+    tip.scale.set(0.8, 1, 1);
+
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.030, 0.30, 16), white);
+    stem.position.set(-0.006 * side, -0.205, 0.004);
+
+    pod.add(body, tip, stem);
+    pod.position.copy(a);
+    pod.rotation.x = 0.16;                 // stem angles FORWARD along the jaw
+    pod.rotation.z = -0.05 * side;         // and hugs the head rather than flaring
+    head.add(pod);
+  }
+}
+
+/* gaze ray — the direction the arm's base follows */
+const gaze = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, -0.1, -1.2), new THREE.Vector3(0, -0.1, -3.4)]),
+  new THREE.LineBasicMaterial({ color: 0x5ad1e6, transparent: true, opacity: 0.5 })
+);
+head.add(gaze);
+
+function fallbackHead() {
+  const skin = new THREE.MeshStandardMaterial({ color: 0x9aa7bd, roughness: 0.62 });
+  const c = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), skin);
+  c.scale.set(0.9, 1.08, 1.0);
+  head.add(c);
+  const n = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.42, 20), skin);
+  n.rotation.x = -Math.PI / 2; n.position.set(0, -0.12, -1.0);
+  head.add(n);
+  addAirPods({ '-1': new THREE.Vector3(-0.86, 0, -0.05),
+                1: new THREE.Vector3(0.86, 0, -0.05) });
+  document.getElementById('credit').textContent = 'model failed to load — using placeholder';
+}
+
+const tex = new THREE.TextureLoader();
+const colour = tex.load('models/Map-COL.jpg');
+colour.colorSpace = THREE.SRGBColorSpace;
+const normal = tex.load('models/Map-NORM.jpg');
+
+new GLTFLoader().load('models/LeePerrySmith.glb', gltf => {
+  const mesh = gltf.scene.getObjectByProperty('type', 'Mesh');
+  if (!mesh) return fallbackHead();
+
+  mesh.material = new THREE.MeshStandardMaterial({
+    map: colour, normalMap: normal,
+    normalScale: new THREE.Vector2(0.7, 0.7),
+    roughness: 0.58, metalness: 0.0
+  });
+
+  /* This scan is a bust, not just a head — it runs down to the shoulders, so its
+     bounding box is useless for placing anything. These are measured off the mesh:
+     the ear spans y 0.5..2.0 and its centre (the concha) sits at
+     |x|=1.85, y=1.25, z=-0.17 in the model's own units. */
+  const EAR = new THREE.Vector3(1.85, 1.25, -0.17);
+  const EAR_SPAN = 1.9;                     // ear-to-ear width in scene units
+  const k = EAR_SPAN / (EAR.x * 2);
+
+  /* Pivot on the ear line rather than the bbox centre: that is roughly where a
+     real head turns, so the rotation reads correctly. */
+  const holder = new THREE.Group();
+  mesh.position.set(0, -EAR.y, -EAR.z);
+  holder.add(mesh);
+  holder.scale.setScalar(k);
+  holder.rotation.y = Math.PI;              // scan faces +Z; our forward is -Z
+  head.add(holder);
+
+  /* Find each ear from the real geometry: sweep rays inward across the ear
+     region and keep the outermost hit — the rim apex. That is a robust feature
+     on both ears, unlike the concha, and it adapts to the scan's asymmetry.
+     The pod then sits inboard and forward of it, which is where the bowl is. */
+  const saved = head.rotation.clone();
+  head.rotation.set(0, 0, 0);              // measure in the rest pose
+  head.updateMatrixWorld(true);
+
+  const ray = new THREE.Raycaster();
+  const anchors = {};
+  for (const side of [-1, 1]) {
+    let apex = null;
+    /* Sweep only the concha band. Sweeping the whole ear finds the helix bulge,
+       which is both higher and wider than where a pod actually sits, so the pod
+       ends up hanging outside the narrower lower ear. */
+    for (let y = -0.14; y <= 0.08; y += 0.02) {
+      for (let z = -0.45; z <= 0.45; z += 0.02) {
+        ray.set(new THREE.Vector3(side * 3, y, z), new THREE.Vector3(-side, 0, 0));
+        const hit = ray.intersectObject(mesh, false)[0];
+        if (hit && (!apex || Math.abs(hit.point.x) > Math.abs(apex.x))) apex = hit.point.clone();
+      }
+    }
+    if (apex) {
+      /* Now the anchor is the ear's outer surface at concha height; nudge it
+         inboard into the bowl and forward to where the bowl opens. */
+      apex.x -= side * 0.12;   // deep enough that the rim stands proud of the body
+      apex.z -= 0.21;          // forward
+      apex.y -= 0.07;          // and down
+    }
+    anchors[side] = apex;
+  }
+  head.rotation.copy(saved);
+  console.log('[pods] L', JSON.stringify(anchors[-1]), ' R', JSON.stringify(anchors[1]));
+  addAirPods(anchors);
+
+}, undefined, err => { console.warn('glb load failed', err); fallbackHead(); });
+
+/* ---------- orbit (drag to look around) ---------- */
+let camYaw = Math.PI, camPitch = 0.08, camDist = 5.6, dragging = false, px = 0, py = 0;
+renderer.domElement.addEventListener('pointerdown', e => { dragging = true; px = e.clientX; py = e.clientY; });
+addEventListener('pointerup', () => dragging = false);
+addEventListener('pointermove', e => {
+  if (!dragging) return;
+  camYaw   -= (e.clientX - px) * 0.006;
+  camPitch  = Math.max(-1.2, Math.min(1.2, camPitch - (e.clientY - py) * 0.005));
+  px = e.clientX; py = e.clientY;
+});
+renderer.domElement.addEventListener('wheel', e => {
+  e.preventDefault();
+  camDist = Math.max(3.4, Math.min(11, camDist + e.deltaY * 0.004));
+}, { passive: false });
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+resize();
+
+/* ---------- live pose ---------- */
+const target = { pitch: 0, roll: 0, yaw: 0 };   // degrees, yaw already un-offset
+const shown  = { pitch: 0, roll: 0, yaw: 0 };   // smoothed for display
+let yawOffset = 0, lastRaw = null, live = false, packets = 0, hz = 0, t0 = performance.now();
+
+document.getElementById('recenter').onclick = () => {
+  if (lastRaw) yawOffset = lastRaw.yaw;
+};
+
+const demo = new URLSearchParams(location.search).get('pose');
+if (demo) {
+  const [p, r, y] = demo.split(',').map(Number);
+  target.pitch = p || 0; target.roll = r || 0; target.yaw = y || 0;
+  Object.assign(shown, target);
+  live = true;
+  document.getElementById('dot').classList.add('live');
+  document.getElementById('rate').textContent = 'static pose';
+}
+
+const es = demo ? null : new EventSource('/events');
+if (es)
+es.onmessage = ev => {
+  const d = JSON.parse(ev.data);
+  live = d.live;
+  document.getElementById('dot').classList.toggle('live', live);
+  document.getElementById('offline').classList.toggle('show', !live);
+  if (!live || d.pitch === undefined) return;
+
+  lastRaw = d;
+  packets++;
+  const dt = (performance.now() - t0) / 1000;
+  if (dt > 0.5) { hz = packets / dt; packets = 0; t0 = performance.now(); }
+
+  target.pitch = d.pitch;
+  target.roll  = d.roll;
+  let y = d.yaw - yawOffset;
+  target.yaw = ((y + 180) % 360 + 360) % 360 - 180;   // keep in [-180,180)
+};
+
+function bar(el, deg, span) {
+  const f = Math.max(-1, Math.min(1, deg / span));
+  el.style.left  = (f < 0 ? 50 + f * 50 : 50) + '%';
+  el.style.width = Math.abs(f) * 50 + '%';
+}
+
+const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '°';
+
+function tick() {
+  requestAnimationFrame(tick);
+
+  /* Ease toward the latest sample: 25 Hz in, 60 fps out.
+     Yaw wraps at +/-180, so easing the raw number sends the head the long way
+     round — a full spin — every time it crosses the seam. Ease the short arc. */
+  shown.pitch += (target.pitch - shown.pitch) * 0.3;
+  shown.roll  += (target.roll  - shown.roll)  * 0.3;
+  let dy = (((target.yaw - shown.yaw) + 180) % 360 + 360) % 360 - 180;
+  shown.yaw = (((shown.yaw + dy * 0.3) + 180) % 360 + 360) % 360 - 180;
+
+  /* YXZ = yaw, then pitch, then roll — the natural order for a head */
+  head.rotation.set(shown.pitch * DEG, shown.yaw * DEG, -shown.roll * DEG, 'YXZ');
+
+  camera.position.set(
+    Math.sin(camYaw) * Math.cos(camPitch) * camDist,
+    Math.sin(camPitch) * camDist + 0.3,
+    Math.cos(camYaw) * Math.cos(camPitch) * camDist
+  );
+  camera.lookAt(0, -0.45, 0);
+
+  document.getElementById('v-yaw').textContent   = live ? fmt(shown.yaw)   : '—';
+  document.getElementById('v-pitch').textContent = live ? fmt(shown.pitch) : '—';
+  document.getElementById('v-roll').textContent  = live ? fmt(shown.roll)  : '—';
+  bar(document.getElementById('b-yaw'),   shown.yaw,   90);
+  bar(document.getElementById('b-pitch'), shown.pitch, 90);
+  bar(document.getElementById('b-roll'),  shown.roll,  90);
+  document.getElementById('rate').textContent =
+    demo ? 'static pose' : live ? hz.toFixed(0) + ' Hz' : 'waiting';
+
+  renderer.render(scene, camera);
+}
+tick();
+</script>
+</body>
+</html>

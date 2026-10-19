@@ -1,0 +1,2 @@
+pymycobot>=4.0.7
+pyserial>=3.5
